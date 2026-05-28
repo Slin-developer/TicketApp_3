@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { authService } from '@/services/supabase/authService'
@@ -41,25 +41,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const signIn = useCallback(async (email: string, password: string) => {
+    const s = await authService.signIn({ email, password })
+    setSession(s)
+  }, [])
+
+  const signUp = useCallback(async (email: string, password: string) => {
+    const s = await authService.signUp({ email, password })
+    setSession(s)
+  }, [])
+
+  const signOut = useCallback(async () => {
+    await authService.signOut()
+    setSession(null)
+  }, [])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       user: session?.user ?? null,
       loading,
-      async signIn(email, password) {
-        const s = await authService.signIn({ email, password })
-        setSession(s)
-      },
-      async signUp(email, password) {
-        const s = await authService.signUp({ email, password })
-        setSession(s)
-      },
-      async signOut() {
-        await authService.signOut()
-        setSession(null)
-      },
+      signIn,
+      signUp,
+      signOut,
     }),
-    [session, loading],
+    [session, loading, signIn, signUp, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

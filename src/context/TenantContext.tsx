@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { authService } from '@/services/supabase/authService'
 
 interface TenantContextValue {
   currentOrgId: string | null
@@ -26,6 +27,15 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       window.localStorage.removeItem(STORAGE_KEY)
     }
   }, [currentOrgId])
+
+  // Clear org selection on sign-out so a new user on the same device
+  // doesn't inherit a previous user's organization.
+  useEffect(() => {
+    const sub = authService.onAuthStateChange((session) => {
+      if (!session) setCurrentOrgIdState(null)
+    })
+    return () => sub.unsubscribe()
+  }, [])
 
   const setCurrentOrgId = useCallback((orgId: string | null) => {
     setCurrentOrgIdState(orgId)
