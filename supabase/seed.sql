@@ -1,0 +1,1 @@
+-- TODO(Phase 2): seed mock users (admin/organizer/scanner/attendee), one test event, and a handful of `valid` tickets with known token_hash values for scanner testing.
