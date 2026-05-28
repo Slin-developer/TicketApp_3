@@ -12,15 +12,15 @@
 
 ## Phase 2: Database & Auth Foundation
 
-- [ ] Enable the `pgcrypto` extension (needed for token hashing in the scan RPC).
-- [ ] Write the initial `schema.sql` migration for: `profiles`, `events`, `tickets`, `orders`.
-    - [ ] `tickets` stores `token_hash` (never the raw secret) and a `status` enum: `valid | scanned | void`.
-    - [ ] `orders` stores a `status` enum: `pending | paid | fulfilled | failed | expired`.
-    - [ ] Encode the order/ticket state machine from `ARCHITECTURE.md` §4 as constraints/defaults.
-- [ ] Create the `current_organizer_id()` `SECURITY DEFINER STABLE` helper function (RULES.md Rule 1).
-- [ ] Implement explicit RLS policies for `organizer`, `scanner`, and `attendee` using the helper (not inline `profiles` subqueries).
-- [ ] Create `seed.sql` to inject 4 test users (one per role), a test event, and a few `valid` test tickets (insert `token_hash` for known test secrets).
-- [ ] Regenerate `database.types.ts`.
+- [x] Enable the `pgcrypto` extension (needed for token hashing in the scan RPC).
+- [x] Write the initial `schema.sql` migration for: `profiles`, `events`, `tickets`, `orders`.
+    - [x] `tickets` stores `token_hash` (never the raw secret) and a `status` enum: `valid | scanned | void`.
+    - [x] `orders` stores a `status` enum: `pending | paid | fulfilled | failed | expired`.
+    - [x] Encode the order/ticket state machine from `ARCHITECTURE.md` §4 as constraints/defaults.
+- [x] Create the `current_organizer_id()` `SECURITY DEFINER STABLE` helper function (RULES.md Rule 1).
+- [x] Implement explicit RLS policies for `organizer`, `scanner`, and `attendee` using the helper (not inline `profiles` subqueries).
+- [x] Create `seed.sql` to inject 4 test users (one per role), a test event, and a few `valid` test tickets (insert `token_hash` for known test secrets).
+- [x] Regenerate `database.types.ts`.
 
 ## Phase 3: Core Service Layer
 
