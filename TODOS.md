@@ -16,10 +16,10 @@
 - [x] Run `supabase gen types typescript` to generate `database.types.ts`.
 
 ## Phase 3: Core Service Layer
-- [ ] Implement `lib/supabaseClient.ts`.
-- [ ] Implement `IAuthProvider.ts` and `authService.ts`.
-- [ ] Build `AuthContext.tsx` and `TenantContext.tsx`.
-- [ ] Populate `src/types/domain.ts` with explicit types (`ScanResult`, `Order`, `PaymentStatus`).
+- [x] Implement `lib/supabaseClient.ts`.
+- [x] Implement `IAuthProvider.ts` and `authService.ts`.
+- [x] Build `AuthContext.tsx` and `TenantContext.tsx`.
+- [x] Populate `src/types/domain.ts` with explicit types (`ScanResult`, `Order`, `PaymentStatus`).
 
 ## Phase 4: UI Primitives & Routing
 - [ ] Build the bare-bones semantic UI components in `components/ui/` (`Button`, `Input`, `Select`).
