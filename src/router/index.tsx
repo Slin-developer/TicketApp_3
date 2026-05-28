@@ -1,6 +1,7 @@
-import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { ScannerPanel } from '@/components/features/scanner/ScannerPanel'
+import { CheckoutPanel } from '@/components/features/checkout/CheckoutPanel'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
@@ -28,7 +29,16 @@ function AdminPage() {
   return <main><h1>Admin</h1></main>
 }
 function CheckoutPage() {
-  return <main><h1>Checkout</h1></main>
+  const [params] = useSearchParams()
+  const eventId = params.get('event')
+  return (
+    <main>
+      <h1>Checkout</h1>
+      {eventId
+        ? <CheckoutPanel eventId={eventId} />
+        : <p>Append <code>?event=&lt;event_id&gt;</code> to the URL to pick an event.</p>}
+    </main>
+  )
 }
 
 const router = createBrowserRouter([

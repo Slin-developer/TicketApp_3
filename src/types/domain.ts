@@ -26,3 +26,12 @@ export interface CheckoutSession {
   url: string
   expiresAt: string
 }
+
+// Discriminated union returned by the reserve_tickets RPC. Mirrors the jsonb
+// payload built in 0006_reserve_tickets_rpc.sql.
+export type ReserveResult =
+  | { result: 'success'; orderId: string; amountCents: number; quantity: number }
+  | { result: 'sold_out'; available: number }
+  | { result: 'tier_not_found' }
+  | { result: 'invalid_quantity' }
+  | { result: 'unauthorized' }

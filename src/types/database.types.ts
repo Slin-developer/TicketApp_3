@@ -289,6 +289,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      reserve_tickets: {
+        Args: { p_buyer_id: string; p_quantity: number; p_tier_id: string }
+        Returns: Json
+      }
       scan_ticket: { Args: { input_token: string }; Returns: Json }
     }
     Enums: {
