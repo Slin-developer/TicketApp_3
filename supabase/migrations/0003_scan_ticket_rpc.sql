@@ -24,7 +24,9 @@ declare
   v_org_id uuid;
   v_ticket public.tickets%rowtype;
 begin
-  -- Resolve the ticket's org without revealing existence to unauthorized callers.
+  -- Resolve the ticket's org. If the caller is not authorized, we return
+  -- 'unauthorized' (not 'not_found'), which intentionally reveals that the
+  -- token maps to a real ticket — acceptable UX for scanner staff.
   select org_id into v_org_id from public.tickets where token_hash = v_hash;
 
   if v_org_id is null then

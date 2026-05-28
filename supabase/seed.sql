@@ -130,11 +130,11 @@ begin
     token_hash, status, scanned_at
   ) values
     (v_ticket_valid_id,   v_org_id, v_event_id, v_tier_id, v_order_id, v_attendee_uid,
-     encode(digest(v_token_valid,   'sha256'), 'hex'), 'valid',   null),
+     encode(extensions.digest(v_token_valid,   'sha256'), 'hex'), 'valid',   null),
     (v_ticket_scanned_id, v_org_id, v_event_id, v_tier_id, v_order_id, v_attendee_uid,
-     encode(digest(v_token_scanned, 'sha256'), 'hex'), 'scanned', now()),
+     encode(extensions.digest(v_token_scanned, 'sha256'), 'hex'), 'scanned', now()),
     (v_ticket_void_id,    v_org_id, v_event_id, v_tier_id, v_order_id, v_attendee_uid,
-     encode(digest(v_token_void,    'sha256'), 'hex'), 'void',    null)
+     encode(extensions.digest(v_token_void,    'sha256'), 'hex'), 'void',    null)
   on conflict (id) do nothing;
 end;
 $$;
