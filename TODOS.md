@@ -22,8 +22,8 @@
 - [x] Populate `src/types/domain.ts` with explicit types (`ScanResult`, `Order`, `PaymentStatus`).
 
 ## Phase 4: UI Primitives & Routing
-- [ ] Build the bare-bones semantic UI components in `components/ui/` (`Button`, `Input`, `Select`).
-- [ ] Set up React Router in `router/index.tsx` with basic protected/unprotected routes.
+- [x] Build the bare-bones semantic UI components in `components/ui/` (`Button`, `Input`, `Select`).
+- [x] Set up React Router in `router/index.tsx` with basic protected/unprotected routes.
 
 ## Phase 5: The Scanner RPC & Validation UI
 - [ ] Write the PostgreSQL function `scan_ticket(p_qr_hash UUID, p_scanner_id UUID)` inside a migration file.
