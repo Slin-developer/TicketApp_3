@@ -26,10 +26,10 @@
 - [x] Set up React Router in `router/index.tsx` with basic protected/unprotected routes.
 
 ## Phase 5: The Scanner RPC & Validation UI
-- [ ] Write the PostgreSQL function `scan_ticket(p_qr_hash UUID, p_scanner_id UUID)` inside a migration file.
-- [ ] Ensure `scan_ticket` uses `SELECT ... FOR UPDATE` on the `tickets` table and checks scanning permissions via `organization_members`.
-- [ ] Implement `IScanRepository.ts`, `scanService.ts`, and `useScanner.ts`.
-- [ ] Build the minimal scanner UI to test the RPC against dummy seed data, handling the typed responses (`success`, `already_scanned`, `not_found`, `unauthorized`).
+- [x] Write the PostgreSQL function `scan_ticket(input_token text)` inside a migration file. *(Signature follows RULES.md Rule 4, not the older roadmap signature.)*
+- [x] Ensure `scan_ticket` is atomic (conditional UPDATE per Rule 4) and checks scanning permissions via `organization_members` (`has_org_role`).
+- [x] Implement `IScanRepository.ts`, `scanService.ts`, and `useScanner.ts`.
+- [x] Build the minimal scanner UI to test the RPC against dummy seed data, handling the typed responses (`success`, `already_scanned`, `not_found`, `unauthorized`).
 
 ## Phase 6: Inventory Locking & Stripe Connect Stubbing
 - [ ] Write the PostgreSQL function `reserve_tickets(p_tier_id UUID, p_quantity INT, p_buyer_id UUID)` with `SELECT ... FOR UPDATE` on `ticket_tiers` to prevent overselling.

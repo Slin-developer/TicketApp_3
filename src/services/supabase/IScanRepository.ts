@@ -1,2 +1,5 @@
-// TODO(Phase 5): IScanRepository contract for the atomic scan RPC.
-export {}
+import type { ScanResult } from '@/types/domain'
+
+export interface IScanRepository {
+  scan(token: string): Promise<ScanResult>
+}

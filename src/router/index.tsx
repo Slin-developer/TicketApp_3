@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { ScannerPanel } from '@/components/features/scanner/ScannerPanel'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
@@ -16,7 +17,12 @@ function EventsPage() {
   return <main><h1>Events</h1></main>
 }
 function ScannerPage() {
-  return <main><h1>Scanner</h1></main>
+  return (
+    <main>
+      <h1>Scanner</h1>
+      <ScannerPanel />
+    </main>
+  )
 }
 function AdminPage() {
   return <main><h1>Admin</h1></main>

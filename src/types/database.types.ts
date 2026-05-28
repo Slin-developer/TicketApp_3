@@ -167,24 +167,6 @@ export type Database = {
         }
         Relationships: []
       }
-      test_table: {
-        Row: {
-          created_at: string
-          id: string
-          test_message: string | null
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          test_message?: string | null
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          test_message?: string | null
-        }
-        Relationships: []
-      }
       ticket_tiers: {
         Row: {
           capacity: number
@@ -234,10 +216,10 @@ export type Database = {
           id: string
           order_id: string | null
           org_id: string
-          qr_hash: string
           scanned_at: string | null
           status: Database["public"]["Enums"]["ticket_status"]
           tier_id: string
+          token_hash: string
         }
         Insert: {
           attendee_id?: string | null
@@ -246,10 +228,10 @@ export type Database = {
           id?: string
           order_id?: string | null
           org_id: string
-          qr_hash?: string
           scanned_at?: string | null
           status?: Database["public"]["Enums"]["ticket_status"]
           tier_id: string
+          token_hash: string
         }
         Update: {
           attendee_id?: string | null
@@ -258,10 +240,10 @@ export type Database = {
           id?: string
           order_id?: string | null
           org_id?: string
-          qr_hash?: string
           scanned_at?: string | null
           status?: Database["public"]["Enums"]["ticket_status"]
           tier_id?: string
+          token_hash?: string
         }
         Relationships: [
           {
@@ -307,6 +289,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      scan_ticket: { Args: { input_token: string }; Returns: Json }
     }
     Enums: {
       order_status: "pending" | "paid" | "fulfilled" | "failed" | "expired"
