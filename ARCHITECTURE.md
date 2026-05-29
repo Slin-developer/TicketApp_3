@@ -17,14 +17,17 @@ Data-access services implement typed interfaces (e.g., `IRepository<T>`, `IScanR
 
 > **Scanning is online-only.** There is no local SQLite/IndexedDB scan store. The atomic server RPC is the *only* authority for ticket validation and double-spend prevention. The repository pattern here is for testability and clean boundaries, **not** for offline operation. Do not introduce a local scan cache that returns `ScanResult` — a cache cannot enforce the single-scan guarantee.
 
-## 3. Stripe Handling (Pre-Integration Phase)
+## 3. Stripe Handling
 
-Payments are NOT to be implemented yet. Reserve the structure and trust boundaries only.
+The payment pipeline structure is fully implemented as stubs (Phase 6 complete). The next step is upgrading the stubs to real Stripe API calls — not building the structure from scratch.
 
-* **Frontend UI:** Displays "Advisory" prices and a "Checkout" button.
-* **Service Layer (`paymentsService.ts`):** Implements `IPaymentProvider` but currently contains a stub `createCheckout` method. It resolves a fake `CheckoutSession` object with a dummy URL to simulate a redirect, allowing UI testing without Stripe keys.
-* **Strict Rule:** The Stripe SDK must *never* touch the frontend. It will exclusively live in Supabase Edge Functions (`supabase/functions/`).
-* **Trust boundary (for the real integration later):** A ticket only becomes valid/issued when the `stripe-webhook` Edge Function verifies a `checkout.session.completed` event. The frontend success redirect is cosmetic and must never be trusted to issue a ticket — users can forge it.
+* **Frontend UI:** Displays prices and a "Checkout" button. Calls `paymentsService.createCheckout` which invokes the `create-checkout` Edge Function.
+* **Service Layer (`paymentsService.ts`):** Implements `IPaymentProvider`. Currently calls the stub Edge Function which returns a fake redirect URL. When Stripe goes live, only the Edge Function changes — the service and hook contracts are stable.
+* **Edge Functions (stubs, ready to upgrade):**
+  * `supabase/functions/create-checkout/index.ts` — accepts `{ order_id }`, looks up `organizations.stripe_account_id`, returns a fake `{ url, expires_at }`. Replace the fake URL block with `stripe.checkout.sessions.create({...})`.
+  * `supabase/functions/stripe-webhook/index.ts` — accepts `{ event_type, order_id }`, skips signature verification in stub mode. Replace the JSON parse with `stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET)`.
+* **Strict Rule:** The Stripe SDK must *never* touch the frontend. It lives exclusively in Supabase Edge Functions.
+* **Trust boundary:** A ticket is issued **only** by the `stripe-webhook` Edge Function on a verified `checkout.session.completed` event. The frontend success redirect is cosmetic and must never be trusted to issue a ticket.
 
 ## 4. Order & Ticket Lifecycle (State Machine)
 
