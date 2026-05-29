@@ -47,5 +47,9 @@
 - [x] Build a skeleton checkout UI that successfully triggers the `reserve_tickets` RPC and mock payment pipeline.
 
 ## Phase 7: Polish & RLS Verification
-- [ ] Verify that all tables have RLS enabled and cannot be bypassed via the browser console.
-- [ ] Ensure all TanStack Queries correctly and gracefully handle the `throw` errors from the service layer.
+- [x] Verify that all tables have RLS enabled and cannot be bypassed via the browser console.
+  - All 7 tables (`profiles`, `organizations`, `organization_members`, `events`, `ticket_tiers`, `orders`, `tickets`) have `enable` + `force` RLS. All RPCs/helpers `revoke ... from public`, `grant to authenticated`.
+  - Fixed over-exposure: `orgs_public_read using (true)` leaked `organizations.stripe_account_id` to any browser-console client. Migration `0007` uses column-level grants so `id/name/created_at` stay public-readable but the Stripe Connect id is deny-by-default. (No client code reads it; service role bypasses for Edge Functions.)
+  - NOTE: static migration audit only — no local Supabase/CLI in this env, so this was not re-verified against a running DB. Run `supabase db reset` + `supabase status` (or the dashboard advisors) to confirm live.
+- [x] Ensure all TanStack Queries correctly and gracefully handle the `throw` errors from the service layer.
+  - Both wired consumers (`ScannerPanel`, `CheckoutPanel`) render `role="alert"` on `isError`/mutation errors. Remaining `useEvents` query/mutation hooks are not yet wired to UI (admin/events pages are stubs), so nothing is left un-handled.
