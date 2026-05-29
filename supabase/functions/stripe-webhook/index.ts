@@ -1,41 +1,29 @@
-// Phase 6 stub: stripe-webhook Edge Function.
+// stripe-webhook Edge Function (real Stripe).
 //
-// This is the SOLE trust boundary for ticket issuance (RULES.md Rule 8).
-// The real implementation must:
+// THE trust boundary for ticket issuance (RULES.md Rule 8 / ARCHITECTURE.md §3):
 //   1. Read the raw body + Stripe-Signature header.
-//   2. Call stripe.webhooks.constructEvent(rawBody, sig, STRIPE_WEBHOOK_SECRET)
-//      to verify the signature. Reject 400 on any failure.
-//   3. Handle 'checkout.session.completed' (and refund/chargeback events).
+//   2. Verify the signature with stripe.webhooks.constructEventAsync against
+//      STRIPE_WEBHOOK_SECRET. Any failure -> 400, nothing else happens.
+//   3. checkout.session.completed (payment_status === 'paid') -> issue tickets.
+//      charge.refunded / charge.dispute.created -> void the order's tickets.
 //
-// The stub below skips signature verification and instead accepts a JSON body
-// of the shape { event_type: 'checkout.session.completed', order_id } so the
-// fulfilment pipeline (orders -> paid, tickets generated) is exercisable
-// without Stripe wired up. DO NOT ship this to production as-is.
+// Fulfilment and voiding run inside SECURITY DEFINER RPCs (0009_fulfilment_rpcs)
+// so they are atomic and idempotent against Stripe's at-least-once retries.
 //
-// Ticket token model (RULES.md Rule 4 / ARCHITECTURE.md §5):
-//   - Generate a high-entropy raw token per ticket (UUIDv4 = 122 bits).
-//   - Store only sha256(raw_token) hex in tickets.token_hash.
-//   - In a real flow the raw tokens would be encoded into QR codes and
-//     emailed/delivered to the buyer; the DB never persists them.
+// Ticket token model (ARCHITECTURE.md §5): we mint a high-entropy raw token per
+// ticket (UUIDv4 = 122 bits) and persist ONLY sha256(raw) as tickets.token_hash.
+// NOTE: raw tokens are not yet delivered to the buyer (QR/email) — that delivery
+// step is a separate follow-up; without it the issued tickets can't be scanned.
 
+import Stripe from 'https://esm.sh/stripe@14?target=deno'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-interface WebhookBody {
-  event_type?: string
-  order_id?: string
-}
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, stripe-signature',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+const cryptoProvider = Stripe.createSubtleCryptoProvider()
 
 function json(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
   })
 }
 
@@ -48,111 +36,122 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
-
-  // === STUB: skip Stripe signature verification ================================
-  // Real impl: read raw body, verify with stripe.webhooks.constructEvent.
-  let body: WebhookBody
-  try {
-    body = await req.json()
-  } catch {
-    return json(400, { error: 'invalid_json' })
-  }
-
-  if (body.event_type !== 'checkout.session.completed') {
-    // Ignore other event types in the stub. Real impl handles refunds etc.
-    return json(200, { ignored: true, event_type: body.event_type ?? null })
-  }
-  if (!body.order_id) return json(400, { error: 'missing_order_id' })
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  if (!supabaseUrl || !serviceKey) return json(500, { error: 'server_misconfigured' })
+  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
+  const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
+  if (!supabaseUrl || !serviceKey || !stripeKey || !webhookSecret) {
+    return json(500, { error: 'server_misconfigured' })
+  }
+
+  const signature = req.headers.get('stripe-signature')
+  if (!signature) return json(400, { error: 'missing_signature' })
+
+  const stripe = new Stripe(stripeKey, {
+    apiVersion: '2024-06-20',
+    httpClient: Stripe.createFetchHttpClient(),
+  })
+
+  // Verify the signature against the RAW request body. Must use the unparsed
+  // text — re-serialized JSON would not match the signature.
+  const rawBody = await req.text()
+  let event: Stripe.Event
+  try {
+    event = await stripe.webhooks.constructEventAsync(
+      rawBody,
+      signature,
+      webhookSecret,
+      undefined,
+      cryptoProvider,
+    )
+  } catch (err) {
+    return json(400, { error: 'invalid_signature', detail: String(err) })
+  }
 
   const admin = createClient(supabaseUrl, serviceKey)
 
-  const { data: order, error: orderErr } = await admin
-    .from('orders')
-    .select('id, org_id, event_id, attendee_id, status, amount_cents')
-    .eq('id', body.order_id)
-    .maybeSingle()
-  if (orderErr) return json(500, { error: 'order_lookup_failed', detail: orderErr.message })
-  if (!order) return json(404, { error: 'order_not_found' })
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const session = event.data.object as Stripe.Checkout.Session
+      // Only fulfil once the payment actually succeeded.
+      if (session.payment_status !== 'paid') {
+        return json(200, { ignored: true, reason: 'not_paid', payment_status: session.payment_status })
+      }
 
-  // Idempotency: a webhook may fire twice. If already paid, treat as success.
-  if (order.status === 'paid' || order.status === 'fulfilled') {
-    return json(200, { ok: true, already_paid: true, order_id: order.id })
+      const orderId = session.metadata?.order_id ?? session.client_reference_id ?? null
+      if (!orderId) return json(400, { error: 'missing_order_id' })
+
+      // We must know the quantity to mint the right number of tokens. Trust the
+      // order row (set by reserve_tickets), not client/session-supplied values.
+      const { data: order, error: orderErr } = await admin
+        .from('orders')
+        .select('id, status, quantity')
+        .eq('id', orderId)
+        .maybeSingle()
+      if (orderErr) return json(500, { error: 'order_lookup_failed', detail: orderErr.message })
+      if (!order) return json(404, { error: 'order_not_found' })
+      if (order.status === 'paid' || order.status === 'fulfilled') {
+        return json(200, { ok: true, already_paid: true, order_id: order.id })
+      }
+      if (!order.quantity || order.quantity < 1) {
+        return json(409, { error: 'order_missing_quantity' })
+      }
+
+      // Mint one raw token per ticket; persist only the hashes via the RPC.
+      const tokenHashes: string[] = []
+      for (let i = 0; i < order.quantity; i++) {
+        tokenHashes.push(await sha256Hex(crypto.randomUUID()))
+      }
+
+      const paymentIntentId =
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id ?? null
+
+      const { data: result, error: rpcErr } = await admin.rpc('fulfill_paid_order', {
+        p_order_id: orderId,
+        p_payment_intent_id: paymentIntentId,
+        p_token_hashes: tokenHashes,
+      })
+      if (rpcErr) return json(500, { error: 'fulfilment_failed', detail: rpcErr.message })
+
+      const r = result as { result?: string; tickets_issued?: number }
+      if (r?.result === 'fulfilled' || r?.result === 'already_paid') {
+        return json(200, { ok: true, order_id: orderId, ...r })
+      }
+      // Any other RPC result (quantity_mismatch, order_not_pending, …) is a
+      // 500 so Stripe retries and we get alerted via logs.
+      return json(500, { error: 'fulfilment_rejected', detail: r })
+    }
+
+    case 'charge.refunded':
+    case 'charge.dispute.created': {
+      // Both events surface a charge carrying the PaymentIntent id we stored on
+      // the order at fulfilment time. Void that order's tickets.
+      const obj = event.data.object as Stripe.Charge | Stripe.Dispute
+      const paymentIntentId =
+        typeof obj.payment_intent === 'string'
+          ? obj.payment_intent
+          : obj.payment_intent?.id ?? null
+      if (!paymentIntentId) {
+        return json(200, { ignored: true, reason: 'no_payment_intent', event_type: event.type })
+      }
+
+      const { data: result, error: rpcErr } = await admin.rpc('void_order_by_payment_intent', {
+        p_payment_intent_id: paymentIntentId,
+      })
+      if (rpcErr) return json(500, { error: 'void_failed', detail: rpcErr.message })
+
+      const r = result as { result?: string; tickets_voided?: number }
+      // order_not_found is benign (e.g. refund of something we never fulfilled):
+      // ack so Stripe stops retrying.
+      return json(200, { ok: true, event_type: event.type, ...r })
+    }
+
+    default:
+      // Acknowledge unhandled events so Stripe doesn't retry them.
+      return json(200, { ignored: true, event_type: event.type })
   }
-  if (order.status !== 'pending') {
-    return json(409, { error: 'order_not_pending', status: order.status })
-  }
-
-  // Find the tier this order reserved. The pending order's reservation lives
-  // on a single tier in the current model (one-tier-per-order). When multiple
-  // tiers per order are supported, the order will need a join table.
-  // For the stub, infer the tier via amount_cents / quantity is not reliable,
-  // so we look up the most-recent reservation row. The cleanest fix in
-  // production is to add a tier_id (or order_items table) to orders; out of
-  // scope for the stub.
-  const { data: tier, error: tierErr } = await admin
-    .from('ticket_tiers')
-    .select('id, event_id, price_cents, capacity, reserved_count, sold_count')
-    .eq('event_id', order.event_id)
-    .order('price_cents', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (tierErr) return json(500, { error: 'tier_lookup_failed', detail: tierErr.message })
-  if (!tier) return json(500, { error: 'tier_not_found' })
-
-  const quantity = Math.max(1, Math.floor(order.amount_cents / Math.max(1, tier.price_cents)))
-
-  // Generate ticket rows. token_hash = sha256(random raw secret).
-  const ticketRows: Array<{
-    org_id: string
-    event_id: string
-    tier_id: string
-    order_id: string
-    attendee_id: string
-    token_hash: string
-    status: 'valid'
-  }> = []
-  for (let i = 0; i < quantity; i++) {
-    const raw = crypto.randomUUID()
-    const hash = await sha256Hex(raw)
-    ticketRows.push({
-      org_id: order.org_id,
-      event_id: order.event_id,
-      tier_id: tier.id,
-      order_id: order.id,
-      attendee_id: order.attendee_id,
-      token_hash: hash,
-      status: 'valid',
-    })
-  }
-
-  const { error: insertErr } = await admin.from('tickets').insert(ticketRows)
-  if (insertErr) return json(500, { error: 'ticket_insert_failed', detail: insertErr.message })
-
-  // Flip reserved -> sold on the tier.
-  const { error: tierUpdateErr } = await admin
-    .from('ticket_tiers')
-    .update({
-      reserved_count: Math.max(0, tier.reserved_count - quantity),
-      sold_count: tier.sold_count + quantity,
-    })
-    .eq('id', tier.id)
-  if (tierUpdateErr) {
-    return json(500, { error: 'tier_update_failed', detail: tierUpdateErr.message })
-  }
-
-  const { error: orderUpdateErr } = await admin
-    .from('orders')
-    .update({ status: 'paid' })
-    .eq('id', order.id)
-  if (orderUpdateErr) {
-    return json(500, { error: 'order_update_failed', detail: orderUpdateErr.message })
-  }
-
-  return json(200, { ok: true, order_id: order.id, tickets_issued: quantity, stub: true })
 })
