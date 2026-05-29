@@ -50,6 +50,14 @@ begin
     return jsonb_build_object('result', 'invalid_quantity');
   end if;
 
+  -- Guest checkout: buyer_email is the bearer identity (Stripe receipt + the
+  -- only contact for the order). This RPC is anon-callable, so the email must be
+  -- validated here rather than trusting the client. Normalize trailing whitespace.
+  p_buyer_email := btrim(p_buyer_email);
+  if p_buyer_email is null or p_buyer_email = '' or position('@' in p_buyer_email) = 0 then
+    return jsonb_build_object('result', 'invalid_email');
+  end if;
+
   -- Lock the tier row. Concurrent reservers / fulfilments serialize here.
   select * into v_tier
     from public.ticket_tiers
