@@ -57,30 +57,48 @@ export type Database = {
       orders: {
         Row: {
           amount_cents: number
-          attendee_id: string
+          attendee_id: string | null
+          buyer_email: string | null
           created_at: string
           event_id: string
+          expires_at: string | null
           id: string
+          order_reference: string
           org_id: string
+          quantity: number | null
           status: Database["public"]["Enums"]["order_status"]
+          stripe_payment_intent_id: string | null
+          tier_id: string | null
         }
         Insert: {
           amount_cents: number
-          attendee_id: string
+          attendee_id?: string | null
+          buyer_email?: string | null
           created_at?: string
           event_id: string
+          expires_at?: string | null
           id?: string
+          order_reference?: string
           org_id: string
+          quantity?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_payment_intent_id?: string | null
+          tier_id?: string | null
         }
         Update: {
           amount_cents?: number
-          attendee_id?: string
+          attendee_id?: string | null
+          buyer_email?: string | null
           created_at?: string
           event_id?: string
+          expires_at?: string | null
           id?: string
+          order_reference?: string
           org_id?: string
+          quantity?: number | null
           status?: Database["public"]["Enums"]["order_status"]
+          stripe_payment_intent_id?: string | null
+          tier_id?: string | null
         }
         Relationships: [
           {
@@ -95,6 +113,13 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_tier_id_fkey"
+            columns: ["tier_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_tiers"
             referencedColumns: ["id"]
           },
         ]
@@ -282,6 +307,15 @@ export type Database = {
     }
     Functions: {
       current_organizer_id: { Args: never; Returns: string }
+      fulfill_paid_order: {
+        Args: {
+          p_order_id: string
+          p_payment_intent_id: string
+          p_ticket_ids: string[]
+          p_token_hashes: string[]
+        }
+        Returns: Json
+      }
       has_org_role: {
         Args: {
           p_org_id: string
@@ -290,10 +324,14 @@ export type Database = {
         Returns: boolean
       }
       reserve_tickets: {
-        Args: { p_buyer_id: string; p_quantity: number; p_tier_id: string }
+        Args: { p_buyer_email: string; p_quantity: number; p_tier_id: string }
         Returns: Json
       }
       scan_ticket: { Args: { input_token: string }; Returns: Json }
+      void_order_by_payment_intent: {
+        Args: { p_payment_intent_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       order_status: "pending" | "paid" | "fulfilled" | "failed" | "expired"

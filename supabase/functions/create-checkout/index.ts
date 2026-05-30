@@ -76,7 +76,7 @@ Deno.serve(async (req: Request) => {
   // Order must exist, be pending, and carry the tier/quantity reserve_tickets set.
   const { data: order, error: orderErr } = await admin
     .from('orders')
-    .select('id, org_id, event_id, status, amount_cents, tier_id, quantity')
+    .select('id, org_id, event_id, status, amount_cents, tier_id, quantity, order_reference, buyer_email')
     .eq('id', orderId)
     .maybeSingle()
   if (orderErr) return json(500, { error: 'order_lookup_failed', detail: orderErr.message })
@@ -150,6 +150,16 @@ Deno.serve(async (req: Request) => {
       client_reference_id: order.id,
       metadata,
       payment_intent_data: paymentIntentData,
+      // Guest checkout: the buyer never logs in, so the email captured at
+      // reservation is the only contact + the Stripe receipt target.
+      customer_email: order.buyer_email ?? undefined,
+      // Session lifetime: 31 min, not the exact 30-min floor. Stripe requires
+      // expires_at to be AT LEAST 30 min out and evaluates it on receipt; the
+      // boundary value drifts under request latency/clock skew and gets rejected
+      // ("expires_at must be at least 30 minutes in the future"). The extra
+      // minute keeps us safely above the floor. The order's hold is re-anchored
+      // below to outlast whatever session Stripe actually mints.
+      expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
       line_items: [
         {
           quantity: order.quantity,
@@ -163,12 +173,32 @@ Deno.serve(async (req: Request) => {
           },
         },
       ],
-      success_url: `${appUrl}/checkout?status=success&order_id=${order.id}`,
-      cancel_url: `${appUrl}/checkout?status=cancelled&order_id=${order.id}`,
+      // On success the buyer lands on their bearer-keyed My Tickets page, which
+      // polls get-tickets until the webhook fulfils the order. order_reference
+      // (not order_id) is the secret the buyer holds to retrieve tickets.
+      success_url: `${appUrl}/tickets/${order.order_reference}`,
+      cancel_url: `${appUrl}/events`,
     })
 
     if (!session.url) {
       return json(502, { error: 'stripe_no_url' })
+    }
+
+    // Re-anchor the order's hold to the session Stripe actually minted.
+    // reserve_tickets set expires_at relative to RESERVE time, but the session's
+    // clock starts HERE (checkout time). Any reserve->checkout delay erodes the
+    // buffer; once it goes negative, reserve_tickets could reclaim the order
+    // (status -> expired) while the session is still payable, leaving the buyer
+    // charged with no tickets and the inventory potentially resold. Pinning the
+    // hold to session.expires_at + 5 min keeps the reclaim deadline strictly
+    // behind the payable window, regardless of how long the buyer waited.
+    const holdExpiresAt = new Date((session.expires_at + 5 * 60) * 1000).toISOString()
+    const { error: holdErr } = await admin
+      .from('orders')
+      .update({ expires_at: holdExpiresAt })
+      .eq('id', order.id)
+    if (holdErr) {
+      return json(500, { error: 'hold_update_failed', detail: holdErr.message })
     }
 
     return json(200, {

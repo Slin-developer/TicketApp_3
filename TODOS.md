@@ -82,35 +82,32 @@
 
 **TODO — Remaining Phases:**
 
-**Phase 1 — Apply migration 0010 + regenerate types:**
-- [ ] `mcp__supabase__apply_migration` for 0010_guest_checkout.sql (orders: buyer_email, order_reference, expires_at, attendee_id nullable; reserve_tickets rewrite with lazy reclaim; fulfill_paid_order signature change to explicit ticket ids).
-- [ ] `mcp__supabase__generate_typescript_types` to regenerate `src/types/database.types.ts`.
+**Phase 1 — Apply migration 0010 + regenerate types: — COMPLETE (2026-05-30)**
+- [x] `mcp__supabase__apply_migration` for 0010_guest_checkout.sql (orders: buyer_email, order_reference, expires_at, attendee_id nullable; reserve_tickets rewrite with lazy reclaim; fulfill_paid_order signature change to explicit ticket ids). *(Was committed in "Phase 1" but never actually applied — remote was at 0006/0009; now applied. Verified live signatures: `reserve_tickets(uuid,int,text)`, `fulfill_paid_order(uuid,text,uuid[],text[])`.)*
+- [x] `mcp__supabase__generate_typescript_types` to regenerate `src/types/database.types.ts`.
 
-**Phase 2 — Edge functions (3 functions, 1 new secret):**
-- [ ] **Update `supabase/functions/create-checkout/index.ts`:**
-  - Select `order_reference`, `buyer_email` from orders (line 79).
+**Phase 2 — Edge functions (3 functions, 1 new secret): — CODE + DEPLOY DONE (2026-05-30)**
+- [x] **Update `supabase/functions/create-checkout/index.ts`:**
+  - Select `order_reference`, `buyer_email` from orders.
   - Set `success_url = ${appUrl}/tickets/${order.order_reference}`.
-  - Set `cancel_url` to the events page.
+  - Set `cancel_url` to the events page (`${appUrl}/events`).
   - Pass `customer_email: order.buyer_email` and `expires_at = now + 30 min` to `stripe.checkout.sessions.create()`.
-- [ ] **Update `supabase/functions/stripe-webhook/index.ts`:**
+- [x] **Update `supabase/functions/stripe-webhook/index.ts`:**
   - Generate `quantity` ticket UUIDs (via `crypto.randomUUID()`).
-  - For each ticket, compute `token = HMAC_SHA256(TICKET_TOKEN_SECRET, ticket_id)` using Web Crypto.
-  - Compute `token_hash = sha256Hex(token)` (same hash logic as scanner).
+  - For each ticket, compute `token = HMAC_SHA256(TICKET_TOKEN_SECRET, ticket_id)` using Web Crypto (`deriveToken`).
+  - Compute `token_hash = sha256Hex(token)` (same hash logic as scanner — round-trip verified against `scan_ticket`).
   - Pass `(p_ticket_ids[], p_token_hashes[])` to `fulfill_paid_order` RPC.
-  - Update the NOTE comment (lines 13–16) to describe derived-token delivery via get-tickets.
-- [ ] **New `supabase/functions/get-tickets/index.ts`** (anon-callable):
-  - POST endpoint: input `{ order_reference }`.
-  - Service-role lookup of the order + its tickets (id, status, tier.name, event.name).
-  - If `order.status === 'paid'`, recompute `token = HMAC(TICKET_TOKEN_SECRET, ticket.id)` per ticket.
-  - Return `{ status, tickets: [{ id, status, token, tier_name }], event_name }`.
-  - While pending, return `{ status: 'pending', tickets: [] }`.
-  - Add CORS headers (like `create-checkout`).
-- [ ] **Deploy all 3 functions via MCP** (`mcp__supabase__deploy_edge_function`):
-  - `stripe-webhook` with `verify_jwt: false` (Stripe cannot provide a Supabase JWT).
-  - `create-checkout` with default `verify_jwt: true`.
-  - `get-tickets` with default `verify_jwt: true`.
-- [ ] **Set function secrets in Supabase Dashboard** (MCP cannot do this):
-  - `TICKET_TOKEN_SECRET` = the value from `supabase/functions/.env`.
+  - Updated the NOTE comment to describe derived-token delivery via get-tickets.
+- [x] **New `supabase/functions/get-tickets/index.ts`** (anon-callable, bearer = order_reference):
+  - POST `{ order_reference }`; service-role lookup of order + tickets (id, status, tier name, event name).
+  - Re-derives `token = HMAC(TICKET_TOKEN_SECRET, ticket.id)` per paid ticket; returns `{ status, tickets:[{id,status,token,tier_name}], event_name }`.
+  - While pending returns `{ status:'pending', tickets:[] }`. CORS headers included.
+- [x] **Deploy all 3 functions via MCP** (all ACTIVE, version 1 — were never deployed before):
+  - `stripe-webhook` with `verify_jwt: false`.
+  - `create-checkout` with `verify_jwt: true`.
+  - `get-tickets` with `verify_jwt: true`.
+- [ ] **Set function secrets in Supabase Dashboard** (MCP cannot do this — USER ACTION REQUIRED):
+  - `TICKET_TOKEN_SECRET` = the value from `supabase/functions/.env` (`106a3991...`). Webhook + get-tickets both 500 without it.
   - Verify `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set.
 
 **Phase 3 — Frontend: public browsing, guest checkout, My Tickets:**

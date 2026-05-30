@@ -10,10 +10,13 @@
 // Fulfilment and voiding run inside SECURITY DEFINER RPCs (0009_fulfilment_rpcs)
 // so they are atomic and idempotent against Stripe's at-least-once retries.
 //
-// Ticket token model (ARCHITECTURE.md §5): we mint a high-entropy raw token per
-// ticket (UUIDv4 = 122 bits) and persist ONLY sha256(raw) as tickets.token_hash.
-// NOTE: raw tokens are not yet delivered to the buyer (QR/email) — that delivery
-// step is a separate follow-up; without it the issued tickets can't be scanned.
+// Ticket token model (ARCHITECTURE.md §5, Phase 8): tokens are DERIVED, not
+// stored. For each issued ticket we generate a stable UUID id, then compute the
+// raw QR token = HMAC_SHA256(TICKET_TOKEN_SECRET, ticket_id) and persist ONLY
+// sha256(token) as tickets.token_hash. Nothing secret is at rest. The buyer
+// retrieves their QR via the get-tickets function, which re-derives the same
+// token from the (stored) ticket id + secret. The scanner hashes the scanned
+// token and matches it against token_hash.
 
 import Stripe from 'https://esm.sh/stripe@14?target=deno'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -27,12 +30,29 @@ function json(status: number, body: Record<string, unknown>): Response {
   })
 }
 
-async function sha256Hex(input: string): Promise<string> {
-  const bytes = new TextEncoder().encode(input)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest))
+function toHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input)
+  return toHex(await crypto.subtle.digest('SHA-256', bytes))
+}
+
+// Derive a ticket's raw QR token from its stable id. Must stay byte-identical
+// to get-tickets so re-derived tokens hash back to the stored token_hash.
+async function deriveToken(secret: string, ticketId: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(ticketId))
+  return toHex(sig)
 }
 
 Deno.serve(async (req: Request) => {
@@ -42,7 +62,8 @@ Deno.serve(async (req: Request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')
-  if (!supabaseUrl || !serviceKey || !stripeKey || !webhookSecret) {
+  const tokenSecret = Deno.env.get('TICKET_TOKEN_SECRET')
+  if (!supabaseUrl || !serviceKey || !stripeKey || !webhookSecret || !tokenSecret) {
     return json(500, { error: 'server_misconfigured' })
   }
 
@@ -99,10 +120,16 @@ Deno.serve(async (req: Request) => {
         return json(409, { error: 'order_missing_quantity' })
       }
 
-      // Mint one raw token per ticket; persist only the hashes via the RPC.
+      // Generate a stable id per ticket, derive its token from that id, and
+      // persist only sha256(token). The id lets get-tickets re-derive the same
+      // token later; nothing secret is stored.
+      const ticketIds: string[] = []
       const tokenHashes: string[] = []
       for (let i = 0; i < order.quantity; i++) {
-        tokenHashes.push(await sha256Hex(crypto.randomUUID()))
+        const ticketId = crypto.randomUUID()
+        const token = await deriveToken(tokenSecret, ticketId)
+        ticketIds.push(ticketId)
+        tokenHashes.push(await sha256Hex(token))
       }
 
       const paymentIntentId =
@@ -113,6 +140,7 @@ Deno.serve(async (req: Request) => {
       const { data: result, error: rpcErr } = await admin.rpc('fulfill_paid_order', {
         p_order_id: orderId,
         p_payment_intent_id: paymentIntentId,
+        p_ticket_ids: ticketIds,
         p_token_hashes: tokenHashes,
       })
       if (rpcErr) return json(500, { error: 'fulfilment_failed', detail: rpcErr.message })
