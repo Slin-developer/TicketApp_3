@@ -64,7 +64,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const currency = (Deno.env.get('STRIPE_CURRENCY') ?? 'eur').toLowerCase()
-  const appUrl = Deno.env.get('APP_URL') ?? new URL(req.url).origin
+  // APP_URL env wins (explicit prod override). Otherwise use the browser's
+  // Origin header (sent by supabase-js on every cross-origin call), which is the
+  // actual frontend URL — works for localhost or any domain automatically.
+  const appUrl = Deno.env.get('APP_URL')
+    ?? req.headers.get('origin')
+    ?? new URL(req.url).origin
   const feeBps = Number(Deno.env.get('PLATFORM_FEE_BPS') ?? '0')
 
   const stripe = new Stripe(stripeKey, {

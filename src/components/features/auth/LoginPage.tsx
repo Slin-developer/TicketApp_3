@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { AppLayout } from '@/components/layout/AppLayout'
 
 export function LoginPage() {
   const { signIn } = useAuth()
@@ -21,31 +22,38 @@ export function LoginPage() {
       await signIn(email, password)
       navigate(next, { replace: true })
     } catch {
-      setError('Invalid credentials. Please try again.')
+      setError('Ungültige Zugangsdaten. Bitte versuche es erneut.')
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <main>
-      <h1>Staff Login</h1>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label htmlFor="email">Email</label>
+    <AppLayout narrow>
+      <div className="page-header">
+        <h1>Staff-Login</h1>
+        <p className="subtitle">Nur für Mitarbeitende mit Scanner-Zugang.</p>
+      </div>
+
+      <form className="card stack" onSubmit={handleSubmit}>
+        <div className="field">
+          <label htmlFor="email">E-Mail</label>
           <input
             id="email"
+            className="text-input"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
+            placeholder="staff@beispiel.de"
             required
           />
         </div>
-        <div>
-          <label htmlFor="password">Password</label>
+        <div className="field">
+          <label htmlFor="password">Passwort</label>
           <input
             id="password"
+            className="text-input"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -53,11 +61,15 @@ export function LoginPage() {
             required
           />
         </div>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Signing in…' : 'Sign in'}
+        {error && (
+          <p className="message error" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+          {submitting ? 'Anmeldung…' : 'Anmelden'}
         </button>
       </form>
-    </main>
+    </AppLayout>
   )
 }

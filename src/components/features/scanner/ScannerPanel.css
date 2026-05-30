@@ -1,0 +1,40 @@
+.scan-result {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.scan-result .result-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.scan-result.ok {
+  background: var(--brand-green-bg);
+  border: 1px solid var(--brand-green-border);
+  color: var(--brand-green);
+}
+
+.scan-result.ok .result-icon {
+  background: var(--brand-green);
+}
+
+.scan-result.warn {
+  background: var(--error-bg);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--error-color);
+}
+
+.scan-result.warn .result-icon {
+  background: var(--error-color);
+}

@@ -1,20 +1,24 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { useScanner } from '@/hooks/useScanner'
 import type { ScanResult } from '@/types/domain'
+import './ScannerPanel.css'
 
-function describe(result: ScanResult): string {
+interface Described {
+  tone: 'ok' | 'warn'
+  text: string
+}
+
+function describe(result: ScanResult): Described {
   switch (result.result) {
     case 'success':
-      return `Success — ticket ${result.ticketId} marked scanned.`
+      return { tone: 'ok', text: `Gültig — Ticket ${result.ticketId} eingecheckt.` }
     case 'already_scanned':
-      return 'Already scanned.'
+      return { tone: 'warn', text: 'Bereits gescannt.' }
     case 'not_found':
-      return 'Not found.'
+      return { tone: 'warn', text: 'Ticket nicht gefunden.' }
     case 'unauthorized':
-      return 'Unauthorized for this ticket.'
+      return { tone: 'warn', text: 'Keine Berechtigung für dieses Ticket.' }
   }
 }
 
@@ -29,29 +33,56 @@ export function ScannerPanel() {
     scanner.mutate(trimmed)
   }
 
+  const result = scanner.data ? describe(scanner.data) : null
+
   return (
-    <section>
-      <h2>Scan Ticket</h2>
-      <form onSubmit={onSubmit}>
-        <label htmlFor="scan-token">Raw token (QR payload)</label>
-        <Input
+    <form className="card stack" onSubmit={onSubmit}>
+      <div className="field">
+        <label htmlFor="scan-token">Roher Token (QR-Inhalt)</label>
+        <input
           id="scan-token"
           name="token"
+          className="text-input"
           value={token}
           onChange={(e) => setToken(e.target.value)}
           autoComplete="off"
           spellCheck={false}
+          placeholder="QR-Payload einfügen…"
           disabled={scanner.isPending}
         />
-        <Button type="submit" disabled={scanner.isPending || !token.trim()}>
-          {scanner.isPending ? 'Scanning…' : 'Scan'}
-        </Button>
-      </form>
+      </div>
 
-      <output aria-live="polite">
-        {scanner.isError && <p role="alert">Error: {scanner.error.message}</p>}
-        {scanner.data && <p>{describe(scanner.data)}</p>}
-      </output>
-    </section>
+      <button
+        type="submit"
+        className="btn btn-primary btn-block"
+        disabled={scanner.isPending || !token.trim()}
+      >
+        {scanner.isPending ? 'Wird gescannt…' : 'Ticket scannen'}
+      </button>
+
+      <div aria-live="polite">
+        {scanner.isError && (
+          <p className="message error" role="alert">
+            Fehler: {scanner.error.message}
+          </p>
+        )}
+        {result && (
+          <div className={`scan-result ${result.tone}`}>
+            <span className="result-icon">
+              {result.tone === 'ok' ? (
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden>
+                  <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden>
+                  <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </span>
+            {result.text}
+          </div>
+        )}
+      </div>
+    </form>
   )
 }

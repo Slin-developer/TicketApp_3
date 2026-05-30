@@ -1,0 +1,360 @@
+/* Global design system. Mirrors the tokens and visual language established in
+   CheckoutPanel.css so every page of the flow feels like one product. The
+   checkout panel stays self-contained (it sets `body.checkout-mode`), while all
+   other pages render inside the shared `.app-shell` defined here. */
+
+:root {
+  --bg-color: #ffffff;
+  --page-bg: #f8f8fa;
+  --card-bg: #ffffff;
+  --inner-bg: #f4f4f5;
+  --text-color: #09090b;
+  --text-muted: #71717a;
+  --border-color: #e4e4e7;
+  --accent-color: #09090b;
+  --accent-hover: #27272a;
+  --brand-green: #10b981;
+  --brand-green-bg: rgba(16, 185, 129, 0.06);
+  --brand-green-border: rgba(16, 185, 129, 0.3);
+  --error-color: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.06);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--page-bg);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- App shell: top nav + centered page column ---------------------------- */
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.app-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+  color: var(--text-color);
+  text-decoration: none;
+}
+
+.app-brand .brand-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: var(--accent-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.8rem;
+}
+
+.app-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.nav-link {
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+  color: var(--text-color);
+  background: var(--inner-bg);
+}
+
+.nav-link.active {
+  color: var(--text-color);
+  background: var(--inner-bg);
+}
+
+.app-main {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.page {
+  width: 100%;
+  max-width: 640px;
+}
+
+.page-narrow {
+  max-width: 460px;
+}
+
+.page-header {
+  margin-bottom: 1.75rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.page-header .subtitle {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ---- Cards ---------------------------------------------------------------- */
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 1.8rem;
+  box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.04), 0 4px 12px -4px rgba(0, 0, 0, 0.02);
+}
+
+.card-tight {
+  padding: 1.25rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ---- Buttons -------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.85rem 1.4rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: var(--accent-color);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(9, 9, 11, 0.08);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--text-color);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn:disabled {
+  background: var(--inner-bg);
+  color: #a1a1a6;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ---- Form fields ---------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.text-input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.9rem;
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-family: inherit;
+  transition: border-color 0.2s ease;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--text-color);
+}
+
+/* ---- Badges & messages ---------------------------------------------------- */
+
+.badge {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--inner-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.badge.green {
+  background: var(--brand-green-bg);
+  color: var(--brand-green);
+  border-color: var(--brand-green-border);
+}
+
+.message {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.82rem;
+}
+
+.message.error {
+  background: var(--error-bg);
+  color: var(--error-color);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.message.success {
+  background: var(--brand-green-bg);
+  color: var(--brand-green);
+  border: 1px solid var(--brand-green-border);
+}
+
+.message.info {
+  background: var(--inner-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+/* ---- Skeleton (shared with the checkout shimmer) -------------------------- */
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f4f4f5 25%, #e4e4e7 37%, #f4f4f5 63%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite ease;
+}
+
+.skeleton-line.short {
+  width: 40%;
+}
+
+.skeleton-line.medium {
+  width: 65%;
+  margin-top: 0.75rem;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -300px 0;
+  }
+  100% {
+    background-position: 300px 0;
+  }
+}
+
+/* ---- Admin tiles ---------------------------------------------------------- */
+
+.admin-tile {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease;
+}
+
+.admin-tile:hover {
+  border-color: #a1a1aa;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  transform: translateY(-1px);
+}
+
+.admin-tile h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.admin-tile p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+/* ---- Empty state ---------------------------------------------------------- */
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: var(--text-muted);
+}
+
+.empty-state .empty-emoji {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
