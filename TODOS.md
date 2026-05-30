@@ -121,25 +121,20 @@
 - [x] **BLOCKER FOUND + FIXED (2026-05-30): base-table grants were never issued.** The RLS-first schema (0001/0002) wrote policies but never granted table-level DML, so Postgres returned `permission denied for table ...` *before* RLS ran — `service_role` (all edge functions) couldn't touch orders/tickets, and `anon` couldn't read the events catalogue. Phase 7's audit was static-only so it was missed. Migration `0011_restore_table_grants.sql` grants DML to `service_role` + `anon`/`authenticated` (gated by existing FORCE RLS) and re-applies 0007's `organizations` column hardening. Applied to remote + verified live: `get-tickets` now 404s `order_not_found` (was 500 permission denied), anon `GET /rest/v1/events` → 200, and anon still cannot read `organizations.stripe_account_id` (column grants = id/name/created_at only).
 - [x] Confirmed `TICKET_TOKEN_SECRET` + service-role vars ARE set in the deployed functions (probe got past the `server_misconfigured` check), resolving the Phase 2 open USER ACTION.
 
-**Phase 4 — Staff login UI:**
-- [ ] **Implement `LoginPage`:**
+**Phase 4 — Staff login UI: — COMPLETE (code present; see Phase 5 note)**
+- [x] **Implement `LoginPage`:**
   - Email + password form using existing `authService.signIn()` / `useAuth()`.
   - POST to `authService.signIn({ email, password })`.
   - On success, redirect to `/events` or `/scanner` (depending on role / query param).
   - On error, show "Invalid credentials" message.
   - This is staff-only now; `ProtectedRoute` redirects non-auth visitors here.
 
-**Phase 5 — Documentation:**
-- [ ] **Update `ARCHITECTURE.md` §5 (token model):**
-  - Record that tokens are now derived (`HMAC(secret, ticket_id)`), not stored.
-  - Explain why: nothing secret persists; token s are re-derivable for all phases of the ticket lifecycle.
-  - Note the rotation caveat: rotating `TICKET_TOKEN_SECRET` invalidates already-issued QRs.
-- [ ] **Update `RULES.md`:**
-  - Document the guest checkout model (orders with email + reference, no attendee_id).
-  - Document `order_reference` as the bearer key for ticket retrieval.
-  - Document the 35-min hold window and how `reserve_tickets` reclaims expired orders.
-- [ ] **Update `TODOS.md`:**
-  - Add Phase 8 completion notes and archive the pending tasks above once done.
+**Phase 5 — Documentation: — COMPLETE (2026-05-30)**
+- [x] **Updated `ARCHITECTURE.md` §5 (token model):** rewrote to the derived model — `token = HMAC_SHA256(TICKET_TOKEN_SECRET, ticket.id)`, DB stores only `token_hash = SHA-256(token)`; documented issue (`stripe-webhook`) / deliver (`get-tickets`) / scan (`scan_ticket`) stages, the "nothing secret at rest yet re-derivable" rationale, and the rotation caveat (rotating the secret invalidates all issued QRs). Added cross-refs to RULES.md Rule 4 + new Rule 9.
+- [x] **Updated `RULES.md`:** added **Rule 9 (Guest Checkout & Order Reference)** — guest orders carry `buyer_email` + nullable `attendee_id`; `order_reference` is the bearer key for `/tickets/{ref}` + `get-tickets`; 35-min hold window with lazy under-lock reclaim in `reserve_tickets`; `order_not_pending` → "Reservation expired" UI mapping; restated the Rule 8 trust boundary for the cosmetic success redirect.
+- [x] **Updated `TODOS.md`:** Phase 5 completion notes recorded here; Phase 4 (staff login) confirmed implemented in code (`LoginPage.tsx`, commits 4.1/4.2) — see note below.
+
+**NOTE — Phase 4 (Staff login UI):** the checklist box above is stale; `src/components/features/auth/LoginPage.tsx` implements it per spec (email/password via `authService.signIn` → `useAuth`, `?next=` redirect defaulting to `/scanner`, "Invalid credentials" on error). Verified during Phase 5. *(Separately, there is uncommitted WIP splitting `context/AuthContext.tsx` → `AuthContext.ts` + `AuthProvider.tsx` (react-refresh lint fix); not part of Phase 5 — left untouched.)*
 
 **Verification (end-to-end):**
 - [ ] **DB checks:**

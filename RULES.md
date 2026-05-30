@@ -136,3 +136,13 @@ The MCP server connects the AI coding tool to Supabase for **development-time** 
 * Tickets are issued **only** by the `stripe-webhook` Edge Function on a verified `checkout.session.completed` event.
 * The frontend checkout-success redirect must never issue or validate a ticket.
 * The webhook must verify the Stripe signature before acting.
+
+## Rule 9: Guest Checkout & Order Reference (Phase 8)
+
+Buyers **never authenticate**. Only door staff (`scanner` / `admin` / `organizer`) log in. The purchase and ticket-retrieval flow is keyed on the order itself, not on `auth.uid()`.
+
+* **Guest orders carry an email, not a user.** `orders.attendee_id` is nullable; a guest order stores `buyer_email` and a generated `order_reference`. Do not gate the reserve/checkout/retrieve path on a logged-in user.
+* **`order_reference` is the bearer key.** It is the only credential a buyer presents to view their tickets: the buyer lands on `/tickets/{order_reference}` after payment, and `get-tickets` looks up the order (and re-derives QR tokens) from that reference alone. Treat `order_reference` like a capability URL — unguessable, and the sole proof of ownership for a guest.
+* **Inventory holds expire after 35 minutes** (5 min past Stripe's 30-min Checkout session minimum, so the DB never reclaims a hold that still has a live payment session). `reserve_tickets` reclaims expired `pending` orders **lazily, under the tier row lock**, on the next reservation for that tier — no cron job, self-healing. An expired hold flips the order to `expired` and returns its quantity to the tier.
+* **`create-checkout` on a stale hold returns `order_not_pending`.** The UI maps this to "Reservation expired. Please try again." The buyer must re-reserve; a checkout session is never created against a reclaimed order.
+* **Trust:** the bearer-token caveats of Rule 8 still hold — the success redirect to `/tickets/{ref}` is cosmetic. Tickets exist only after the webhook fulfils the `paid` order.

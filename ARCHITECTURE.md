@@ -54,13 +54,24 @@ During the stubbed phase, `seed.sql` may insert `valid` tickets directly to exer
 
 ## 5. Scan Token Model (Security-Critical)
 
-The QR code carries a **high-entropy bearer secret** (a UUIDv4 has 122 bits of entropy — infeasible to brute-force). To avoid storing a directly-usable bearer token in a readable column:
+The QR code carries a **derived bearer token**, not a stored one. As of Phase 8 the token is **computed on demand** rather than minted-and-stored:
 
-* The database stores **`token_hash`** (e.g., a SHA-256 of the secret), never the raw secret.
-* The QR/scan flow sends the raw secret to the RPC; the RPC hashes it and looks up by `token_hash`.
-* This means a leak of the `tickets` table rows does not hand an attacker working scan tokens.
+```text
+token       = HMAC_SHA256(TICKET_TOKEN_SECRET, ticket.id)   -- never persisted
+token_hash  = SHA-256(token)                                -- the only thing stored
+```
 
-See `RULES.md` Rule 4 for the exact RPC contract.
+* `TICKET_TOKEN_SECRET` is a server-only secret (Supabase Edge Function secrets / `supabase/functions/.env`). It is never exposed to the frontend.
+* The `tickets` table stores **only `token_hash`**. The raw token exists transiently inside Edge Functions and inside the QR code — never in a readable column.
+* **Issuance** (`stripe-webhook`): for each ticket, generate the UUID, derive `token = HMAC(secret, ticket.id)`, store `token_hash = SHA-256(token)` via `fulfill_paid_order`.
+* **Delivery** (`get-tickets`): re-derives the same `token` from `ticket.id` + the secret and returns it to the buyer for QR rendering. Nothing about the token needs to have been saved.
+* **Scanning** (`scan_ticket`): the scanner reads the raw token from the QR, the RPC SHA-256-hashes it and looks up by `token_hash`. This path is unchanged — see `RULES.md` Rule 4.
+
+**Why derived instead of stored:** nothing directly-usable persists at rest, so a dump of `tickets` rows hands an attacker no working tokens; yet the token is re-derivable at every lifecycle stage (issue → deliver → re-deliver → scan) without ever round-tripping a secret through the database.
+
+> **Rotation caveat:** because tokens are a pure function of `(TICKET_TOKEN_SECRET, ticket.id)`, rotating `TICKET_TOKEN_SECRET` **invalidates every already-issued QR code** — their stored `token_hash` no longer matches the newly-derived token. Treat secret rotation as a ticket-reissue event.
+
+See `RULES.md` Rule 4 for the exact scan RPC contract and Rule 9 for the guest-checkout / `order_reference` delivery model.
 
 ## 6. Directory Tree
 
