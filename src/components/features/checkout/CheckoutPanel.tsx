@@ -112,11 +112,11 @@ export function CheckoutPanel({ eventId }: Props) {
     return () => window.clearTimeout(timer)
   }, [showPromo])
 
-  // Real DB tiers first, then the always-on Friends List mockup.
+  // Real DB tiers first, then the Friends List mockup (only if a code is applied).
   const tiers = useMemo<DisplayTier[]>(() => {
     const dbTiers = (tiersQuery.data ?? []).map(mapTier)
-    return [...dbTiers, MOCK_FRIENDS_TIER]
-  }, [tiersQuery.data])
+    return unlocked ? [...dbTiers, MOCK_FRIENDS_TIER] : dbTiers
+  }, [tiersQuery.data, unlocked])
 
   useEffect(() => {
     if (loading) return

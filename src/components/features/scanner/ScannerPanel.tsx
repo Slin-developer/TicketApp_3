@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useScanner } from '@/hooks/useScanner'
+import { QrScanner } from './QrScanner'
 import type { ScanResult } from '@/types/domain'
 import './ScannerPanel.css'
 
@@ -22,7 +23,9 @@ function describe(result: ScanResult): Described {
   }
 }
 
-export function ScannerPanel() {
+// Manual token entry — a fallback for when the camera is unavailable or a code
+// won't read. Goes through the same scan hook → RPC path as the camera scanner.
+function ManualEntry() {
   const [token, setToken] = useState('')
   const scanner = useScanner()
 
@@ -36,7 +39,7 @@ export function ScannerPanel() {
   const result = scanner.data ? describe(scanner.data) : null
 
   return (
-    <form className="card stack" onSubmit={onSubmit}>
+    <form className="stack" onSubmit={onSubmit}>
       <div className="field">
         <label htmlFor="scan-token">Roher Token (QR-Inhalt)</label>
         <input
@@ -84,5 +87,26 @@ export function ScannerPanel() {
         )}
       </div>
     </form>
+  )
+}
+
+export function ScannerPanel() {
+  const [manualOpen, setManualOpen] = useState(false)
+
+  return (
+    <div className="card stack">
+      <QrScanner />
+
+      <button
+        type="button"
+        className="btn btn-secondary btn-block manual-toggle"
+        aria-expanded={manualOpen}
+        onClick={() => setManualOpen((o) => !o)}
+      >
+        {manualOpen ? 'Manuelle Eingabe ausblenden' : 'Token manuell eingeben'}
+      </button>
+
+      {manualOpen && <ManualEntry />}
+    </div>
   )
 }
