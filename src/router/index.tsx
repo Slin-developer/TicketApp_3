@@ -1,20 +1,17 @@
-import { createBrowserRouter, Navigate, Outlet, RouterProvider, useSearchParams } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { ScannerPanel } from '@/components/features/scanner/ScannerPanel'
 import { CheckoutPanel } from '@/components/features/checkout/CheckoutPanel'
 import { EventsPage } from '@/components/features/events/EventsPage'
 import { MyTicketsPage } from '@/components/features/tickets/MyTicketsPage'
+import { LoginPage } from '@/components/features/auth/LoginPage'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
+  const location = useLocation()
   if (loading) return null
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />
   return <Outlet />
-}
-
-// Stub pages — replaced in subsequent phases
-function LoginPage() {
-  return <main><h1>Login</h1></main>
 }
 function ScannerPage() {
   return (
@@ -29,15 +26,8 @@ function AdminPage() {
 }
 function CheckoutPage() {
   const [params] = useSearchParams()
-  const eventId = params.get('event')
-  return (
-    <main>
-      <h1>Checkout</h1>
-      {eventId
-        ? <CheckoutPanel eventId={eventId} />
-        : <p>Append <code>?event=&lt;event_id&gt;</code> to the URL to pick an event.</p>}
-    </main>
-  )
+  const eventId = params.get('event') ?? 'public'
+  return <CheckoutPanel eventId={eventId} />
 }
 
 const router = createBrowserRouter([
