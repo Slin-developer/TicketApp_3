@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTiersByEvent } from '@/hooks/useEvents'
+import { useCreateCheckout, useReserveTickets } from '@/hooks/useCheckout'
+import type { ReserveResult, TicketTier } from '@/types/domain'
 import './CheckoutPanel.css'
 
-type TierStatus = 'available' | 'unavailable' | 'locked'
+type TierStatus = 'available' | 'unavailable'
 
-interface TierData {
+interface DisplayTier {
   id: string
   title: string
   price: number
   badge: string
   status: TierStatus
   max: number
-  isSecret?: boolean
+  isMock?: boolean
 }
 
 interface PromoMessage {
@@ -20,76 +23,87 @@ interface PromoMessage {
 
 const PROMO_CODES = new Set(['FRIENDS2026', 'SECRET', 'FRIENDS'])
 
-const TIERS: TierData[] = [
-  {
-    id: 'early-bird',
-    title: 'Early Bird',
-    price: 25,
-    badge: 'Ausverkauf droht',
-    status: 'available',
-    max: 10,
-  },
-  {
-    id: 'phase-1',
-    title: 'Standard',
-    price: 40,
-    badge: 'Beliebt',
-    status: 'available',
-    max: 10,
-  },
-  {
-    id: 'phase-2',
-    title: 'Late Booking',
-    price: 60,
-    badge: 'Demnächst',
-    status: 'unavailable',
-    max: 10,
-  },
-  {
-    id: 'friends-list',
-    title: 'Friends List',
-    price: 15,
-    badge: 'Exklusiv freigeschaltet',
-    status: 'locked',
-    max: 4,
-    isSecret: true,
-  },
-]
+// Per-order cap kept from the original mockup; real availability still wins.
+const MAX_PER_ORDER = 10
+
+// Front-end-only mockup. There is no backend for this tier yet, so it is always
+// shown (regardless of any promo code) and, when selected, keeps the original
+// fake-confirmation modal instead of touching reserve_tickets / Stripe.
+const MOCK_FRIENDS_TIER: DisplayTier = {
+  id: 'friends-list-mock',
+  title: 'Friends List',
+  price: 15,
+  badge: 'Exklusiv',
+  status: 'available',
+  max: 4,
+  isMock: true,
+}
 
 const currencyFormatter = new Intl.NumberFormat('de-DE', {
   style: 'currency',
   currency: 'EUR',
 })
 
-const createInitialQuantities = () =>
-  TIERS.reduce<Record<string, number>>((acc, tier) => {
-    acc[tier.id] = 0
-    return acc
-  }, {})
+// Map a DB ticket_tiers row onto the card shape the UI renders. Availability is
+// derived live from capacity - reserved - sold.
+function mapTier(tier: TicketTier): DisplayTier {
+  const available = Math.max(0, tier.capacity - tier.reserved_count - tier.sold_count)
+  return {
+    id: tier.id,
+    title: tier.name,
+    price: tier.price_cents / 100,
+    badge: available > 0 ? `Noch ${available} verfügbar` : 'Ausverkauft',
+    status: available > 0 ? 'available' : 'unavailable',
+    max: Math.min(available, MAX_PER_ORDER),
+  }
+}
+
+function reserveErrorMessage(result: ReserveResult): string {
+  switch (result.result) {
+    case 'sold_out':
+      return result.available > 0
+        ? `Nur noch ${result.available} Tickets verfügbar.`
+        : 'Dieses Ticket ist leider ausverkauft.'
+    case 'tier_not_found':
+      return 'Dieses Ticket ist nicht mehr verfügbar.'
+    case 'invalid_quantity':
+      return 'Bitte wähle eine gültige Anzahl.'
+    case 'invalid_email':
+      return 'Bitte gib eine gültige E-Mail-Adresse ein.'
+    default:
+      return 'Reservierung fehlgeschlagen. Bitte versuche es erneut.'
+  }
+}
 
 interface Props {
   eventId: string
 }
 
 export function CheckoutPanel({ eventId }: Props) {
-  const [loading, setLoading] = useState(true)
+  // The router defaults eventId to 'public' when no ?event param is present;
+  // that is not a real tier owner, so don't fire a query for it.
+  const realEventId = eventId && eventId !== 'public' ? eventId : null
+  const tiersQuery = useTiersByEvent(realEventId)
+  const reserveTickets = useReserveTickets()
+  const createCheckout = useCreateCheckout()
+
   const [showPromo, setShowPromo] = useState(false)
   const [promoValue, setPromoValue] = useState('')
   const [promoMessage, setPromoMessage] = useState<PromoMessage | null>(null)
   const [unlocked, setUnlocked] = useState(false)
-  const [quantities, setQuantities] = useState<Record<string, number>>(createInitialQuantities)
+  const [email, setEmail] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [loadedIndices, setLoadedIndices] = useState<Set<number>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const promoInputRef = useRef<HTMLInputElement>(null)
 
+  const loading = tiersQuery.isLoading
+  const checkoutPending = reserveTickets.isPending || createCheckout.isPending
+
   useEffect(() => {
     document.body.classList.add('checkout-mode')
     return () => document.body.classList.remove('checkout-mode')
-  }, [])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setLoading(false), 1100)
-    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -98,14 +112,11 @@ export function CheckoutPanel({ eventId }: Props) {
     return () => window.clearTimeout(timer)
   }, [showPromo])
 
-  const tiers = useMemo(() => {
-    return TIERS.filter((tier) => !tier.isSecret || unlocked).map((tier) => {
-      if (tier.id === 'friends-list' && unlocked) {
-        return { ...tier, status: 'available' as TierStatus }
-      }
-      return tier
-    })
-  }, [unlocked])
+  // Real DB tiers first, then the always-on Friends List mockup.
+  const tiers = useMemo<DisplayTier[]>(() => {
+    const dbTiers = (tiersQuery.data ?? []).map(mapTier)
+    return [...dbTiers, MOCK_FRIENDS_TIER]
+  }, [tiersQuery.data])
 
   useEffect(() => {
     if (loading) return
@@ -126,23 +137,33 @@ export function CheckoutPanel({ eventId }: Props) {
     (sum, tier) => sum + (quantities[tier.id] ?? 0) * tier.price,
     0,
   )
+  // Single-tier checkout: at most one tier ever has a quantity.
+  const activeTier = tiers.find((tier) => (quantities[tier.id] ?? 0) > 0) ?? null
   const activeStep = modalOpen ? 3 : totalQuantity > 0 ? 2 : 1
 
   const summaryItems = tiers.filter((tier) => (quantities[tier.id] ?? 0) > 0)
 
-  const checkoutLabel =
-    totalQuantity > 0 ? `Jetzt sicher bezahlen (${totalQuantity})` : 'Jetzt sicher bezahlen'
+  const checkoutLabel = checkoutPending
+    ? 'Wird verarbeitet…'
+    : totalQuantity > 0
+      ? `Jetzt sicher bezahlen (${totalQuantity})`
+      : 'Jetzt sicher bezahlen'
 
+  // The backend reserves one tier per order, so selecting a different tier
+  // clears any previous selection (only one tier can be active at a time).
   function adjustQuantity(id: string, delta: number) {
     const tier = tiers.find((item) => item.id === id)
     if (!tier || tier.status !== 'available') return
+    setFormError(null)
     setQuantities((prev) => {
       const current = prev[id] ?? 0
       const nextValue = Math.min(tier.max, Math.max(0, current + delta))
-      return { ...prev, [id]: nextValue }
+      return { [id]: nextValue }
     })
   }
 
+  // Cosmetic only: the promo input no longer gates anything (the Friends List
+  // tier is always visible). A valid code just lights up the mock card.
   function applyPromo() {
     const code = promoValue.trim().toUpperCase()
     if (!code) {
@@ -157,18 +178,53 @@ export function CheckoutPanel({ eventId }: Props) {
     setPromoMessage({ type: 'error', text: 'Code ungültig. Bitte prüfen.' })
   }
 
-  function openModal() {
-    if (totalQuantity === 0) return
-    setModalOpen(true)
+  async function handleCheckout() {
+    if (!activeTier) return
+    const quantity = quantities[activeTier.id] ?? 0
+    if (quantity <= 0) return
+
+    // Mockup tier: keep the original fake confirmation, no backend call.
+    if (activeTier.isMock) {
+      setModalOpen(true)
+      return
+    }
+
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
+      setFormError('Bitte gib eine gültige E-Mail-Adresse ein.')
+      return
+    }
+    setFormError(null)
+
+    try {
+      const reservation = await reserveTickets.mutateAsync({
+        tierId: activeTier.id,
+        quantity,
+        email: trimmedEmail,
+      })
+      if (reservation.result !== 'success') {
+        setFormError(reserveErrorMessage(reservation))
+        return
+      }
+      const session = await createCheckout.mutateAsync({ orderId: reservation.orderId })
+      // Hand off to Stripe's hosted checkout page.
+      window.location.href = session.url
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : 'Checkout fehlgeschlagen. Bitte versuche es erneut.',
+      )
+    }
   }
 
   function resetAll() {
     setModalOpen(false)
-    setQuantities(createInitialQuantities())
+    setQuantities({})
     setPromoValue('')
     setPromoMessage(null)
     setUnlocked(false)
     setShowPromo(false)
+    setEmail('')
+    setFormError(null)
   }
 
   return (
@@ -242,10 +298,15 @@ export function CheckoutPanel({ eventId }: Props) {
           </div>
         ) : (
           <div className="ticket-list">
+            {tiersQuery.isError && (
+              <p className="message error">
+                Tickets konnten nicht geladen werden. Bitte lade die Seite neu.
+              </p>
+            )}
             {tiers.map((tier, index) => {
               const quantity = quantities[tier.id] ?? 0
               const isDisabled = tier.status !== 'available'
-              const isUnlocked = tier.id === 'friends-list' && unlocked
+              const isUnlocked = Boolean(tier.isMock) && unlocked
               return (
                 <article
                   key={tier.id}
@@ -355,7 +416,34 @@ export function CheckoutPanel({ eventId }: Props) {
             <span>{currencyFormatter.format(totalAmount)}</span>
           </div>
 
-          <button type="button" className="checkout-btn" disabled={totalQuantity === 0} onClick={openModal}>
+          {/* Email is the buyer's identity for guest checkout — required by
+              reserve_tickets. Hidden for the mock tier, which never reserves. */}
+          {activeTier && !activeTier.isMock && (
+            <div className="email-field">
+              <label htmlFor="buyer-email">E-Mail für deine Tickets</label>
+              <input
+                id="buyer-email"
+                className="promo-input"
+                type="email"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value)
+                  setFormError(null)
+                }}
+                placeholder="du@beispiel.de"
+                autoComplete="email"
+              />
+            </div>
+          )}
+
+          {formError && <p className="message error">{formError}</p>}
+
+          <button
+            type="button"
+            className="checkout-btn"
+            disabled={totalQuantity === 0 || checkoutPending}
+            onClick={handleCheckout}
+          >
             {checkoutLabel}
           </button>
           <div className="trust-footer">SSL-verschlüsselt · PCI-DSS geprüft</div>
