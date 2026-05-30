@@ -1,3 +1,4 @@
+import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabaseClient'
 import type { CheckoutSession, ReserveResult } from '@/types/domain'
 import type {
@@ -12,8 +13,9 @@ interface RawReserveResponse {
     | 'sold_out'
     | 'tier_not_found'
     | 'invalid_quantity'
-    | 'unauthorized'
+    | 'invalid_email'
   order_id?: string
+  order_reference?: string
   amount_cents?: number
   quantity?: number
   available?: number
@@ -26,12 +28,18 @@ function parseReserveResponse(raw: unknown): ReserveResult {
   }
   switch (r.result) {
     case 'success':
-      if (!r.order_id || typeof r.amount_cents !== 'number' || typeof r.quantity !== 'number') {
+      if (
+        !r.order_id ||
+        !r.order_reference ||
+        typeof r.amount_cents !== 'number' ||
+        typeof r.quantity !== 'number'
+      ) {
         throw new Error('reserve_tickets success missing fields.')
       }
       return {
         result: 'success',
         orderId: r.order_id,
+        orderReference: r.order_reference,
         amountCents: r.amount_cents,
         quantity: r.quantity,
       }
@@ -41,23 +49,45 @@ function parseReserveResponse(raw: unknown): ReserveResult {
       return { result: 'tier_not_found' }
     case 'invalid_quantity':
       return { result: 'invalid_quantity' }
-    case 'unauthorized':
-      return { result: 'unauthorized' }
+    case 'invalid_email':
+      return { result: 'invalid_email' }
     default:
       throw new Error(`reserve_tickets returned unknown result: ${String(r.result)}`)
   }
 }
 
-// Stubbed payments provider. reserveTickets hits the real DB RPC (no Stripe
-// involved). createCheckout invokes the create-checkout Edge Function — which
-// is itself stubbed until Phase 6's Stripe wiring lands — so the whole
-// pipeline is exercisable end-to-end without real keys.
+// supabase-js surfaces non-2xx Edge Function responses as FunctionsHttpError
+// with the original Response on `.context`. Pull the JSON `error` code out so a
+// known business outcome (a 409 order_not_pending — the reservation hold lapsed
+// before checkout) can be turned into a friendly message instead of a raw
+// "Edge Function returned a non-2xx status code".
+async function rethrowFunctionError(error: unknown): Promise<never> {
+  if (error instanceof FunctionsHttpError) {
+    let code: string | undefined
+    try {
+      const body = await error.context.json()
+      code = typeof body?.error === 'string' ? body.error : undefined
+    } catch {
+      // fall through to the generic error below
+    }
+    if (code === 'order_not_pending') {
+      throw new Error('Reservation expired. Please try again.')
+    }
+    if (code) throw new Error(`Checkout failed: ${code}`)
+  }
+  throw error
+}
+
+// Payments provider. reserveTickets hits the reserve_tickets DB RPC (guest
+// checkout: email-keyed, no auth). createCheckout invokes the create-checkout
+// Edge Function, which mints a real Stripe Checkout Session and returns its
+// hosted URL for the frontend to redirect to.
 export const paymentsService: IPaymentProvider = {
-  async reserveTickets({ tierId, quantity, buyerId }: ReserveInput): Promise<ReserveResult> {
+  async reserveTickets({ tierId, quantity, email }: ReserveInput): Promise<ReserveResult> {
     const { data, error } = await supabase.rpc('reserve_tickets', {
       p_tier_id: tierId,
       p_quantity: quantity,
-      p_buyer_id: buyerId,
+      p_buyer_email: email,
     })
     if (error) throw error
     return parseReserveResponse(data)
@@ -67,7 +97,7 @@ export const paymentsService: IPaymentProvider = {
     const { data, error } = await supabase.functions.invoke('create-checkout', {
       body: { order_id: orderId },
     })
-    if (error) throw error
+    if (error) await rethrowFunctionError(error)
     if (!data || typeof data !== 'object') {
       throw new Error('create-checkout returned no payload.')
     }

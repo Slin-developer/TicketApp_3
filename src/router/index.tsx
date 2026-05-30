@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate, Outlet, RouterProvider, useSearchParams 
 import { useAuth } from '@/context/AuthContext'
 import { ScannerPanel } from '@/components/features/scanner/ScannerPanel'
 import { CheckoutPanel } from '@/components/features/checkout/CheckoutPanel'
+import { EventsPage } from '@/components/features/events/EventsPage'
+import { MyTicketsPage } from '@/components/features/tickets/MyTicketsPage'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
@@ -13,9 +15,6 @@ function ProtectedRoute() {
 // Stub pages — replaced in subsequent phases
 function LoginPage() {
   return <main><h1>Login</h1></main>
-}
-function EventsPage() {
-  return <main><h1>Events</h1></main>
 }
 function ScannerPage() {
   return (
@@ -42,15 +41,18 @@ function CheckoutPage() {
 }
 
 const router = createBrowserRouter([
+  // Public, guest-facing routes (no login required).
+  { index: true, element: <Navigate to="/events" replace /> },
+  { path: '/events', element: <EventsPage /> },
+  { path: '/checkout', element: <CheckoutPage /> },
+  { path: '/tickets/:ref', element: <MyTicketsPage /> },
   { path: '/login', element: <LoginPage /> },
+  // Staff-only routes behind auth.
   {
     element: <ProtectedRoute />,
     children: [
-      { index: true, element: <Navigate to="/events" replace /> },
-      { path: '/events', element: <EventsPage /> },
       { path: '/scanner', element: <ScannerPage /> },
       { path: '/admin', element: <AdminPage /> },
-      { path: '/checkout', element: <CheckoutPage /> },
     ],
   },
 ])

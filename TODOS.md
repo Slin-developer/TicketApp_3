@@ -106,39 +106,20 @@
   - `stripe-webhook` with `verify_jwt: false`.
   - `create-checkout` with `verify_jwt: true`.
   - `get-tickets` with `verify_jwt: true`.
-- [ ] **Set function secrets in Supabase Dashboard** (MCP cannot do this — USER ACTION REQUIRED):
-  - `TICKET_TOKEN_SECRET` = the value from `supabase/functions/.env` (`106a3991...`). Webhook + get-tickets both 500 without it.
-  - Verify `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are set.
+- [x] **Set function secrets in Supabase Dashboard** — DONE (confirmed 2026-05-30):
+  - `TICKET_TOKEN_SECRET` confirmed set (get-tickets probe passed the `server_misconfigured` gate and reached the DB). Webhook + get-tickets no longer 500 on missing secret.
+  - `STRIPE_SECRET_KEY` / service-role vars present. (`STRIPE_WEBHOOK_SECRET` still to be confirmed against a real `stripe listen` / dashboard webhook before live testing.)
 
-**Phase 3 — Frontend: public browsing, guest checkout, My Tickets:**
-- [ ] **Update `src/router/index.tsx`:**
-  - Pull `/events`, `/checkout`, new `/tickets/:ref` out of `ProtectedRoute` (public routes).
-  - Keep `/scanner`, `/admin` protected.
-  - Root redirects to `/events`.
-- [ ] **Implement `EventsPage`:**
-  - List seeded events (public read via `useEvents` / `eventsService`).
-  - "Buy tickets" button → `/checkout?event=<id>`.
-- [ ] **Update `CheckoutPanel`:**
-  - Remove `!user` gating (lines 30, 47, 70, 78, 100, 107).
-  - Add a **required email input** field.
-  - Reserve with `{ tierId, quantity, email }` (not `buyerId`).
-  - On checkout success, `window.location.assign(session.url)` (redirect to Stripe, not render stub link).
-  - Drop "(stub)" label (line 125).
-  - Handle `order_not_pending` error → "Reservation expired. Please try again."
-- [ ] **Update `src/services/supabase/paymentsService.ts`:**
-  - Change `reserveTickets(buyerId, ...)` signature to `reserveTickets(email, ...)`.
-  - RPC call now passes `p_buyer_email` instead of `p_buyer_id`.
-  - Extract `order_reference` from the RPC result; return it so the redirect knows where to go.
-- [ ] **Implement `MyTicketsPage`** at `/tickets/:ref`:
-  - `useOrderTickets(ref)` hook calling the `get-tickets` edge function via `ticketsService`.
-  - Poll with `refetchInterval: 2000` while `status === 'pending'` (webhook is async).
-  - Show "Finalizing your order…" during pending.
-  - Cap retries (e.g., stop after 2 min if still pending) and show "Order not paid yet. Check your email or try again."
-  - Once `status === 'paid'`, render one `<QRCodeSVG value={token} />` per ticket.
-  - Show tier name + event name alongside each QR.
-- [ ] **Implement stubs:**
-  - `src/services/supabase/ticketsService.ts`: `async getOrderByReference(ref: string)` → invokes `get-tickets` edge function.
-  - `src/hooks/useTickets.ts`: `useOrderTickets(ref)` → TanStack Query wrapper around `ticketsService.getOrderByReference` with polling.
+**Phase 3 — Frontend: public browsing, guest checkout, My Tickets: — COMPLETE (2026-05-30)**
+- [x] **Update `src/router/index.tsx`:** `/events`, `/checkout`, `/tickets/:ref`, `/login` are now public; `/scanner`, `/admin` stay behind `ProtectedRoute`; index redirects to `/events`.
+- [x] **Implement `EventsPage`** (`components/features/events/EventsPage.tsx`): lists events via new `usePublicEvents()` / `eventsService.listPublic()` (public-read RLS, no org scoping); each links to `/checkout?event=<id>`.
+- [x] **Update `CheckoutPanel`:** dropped all `!user` gating; added a required email input; reserves with `{ tierId, quantity, email }`; on checkout success `window.location.assign(session.url)` (real Stripe redirect, "(stub)" removed). `order_not_pending` is mapped to "Reservation expired. Please try again." in the service and surfaced via the existing `role="alert"`.
+- [x] **Update `paymentsService.ts`:** `reserveTickets({ tierId, quantity, email })` → passes `p_buyer_email`; parses `order_reference` + new `invalid_email` result; `createCheckout` reads the `FunctionsHttpError` body to map `order_not_pending`. Domain `ReserveResult.success` now carries `orderReference`; `useCheckout` invalidation no longer keys on `buyerId`.
+- [x] **Implement `MyTicketsPage`** at `/tickets/:ref` (`components/features/tickets/MyTicketsPage.tsx`): `useOrderTickets(ref)` polls every 2s while pending (cap ~2 min in hook + a `GIVE_UP_MS` timer in the page); shows "Finalizing your order…" then "Order not paid yet…" on timeout; renders one `<QRCodeSVG>` per ticket with tier + event name once paid; handles terminal `expired`/`failed`.
+- [x] **Implement service/hook:** `ticketsService.getOrderByReference(ref)` invokes `get-tickets`; `useTickets.useOrderTickets(ref)` is the polling TanStack Query wrapper.
+- [x] Verified: `npm run build` (tsc + vite) passes; `npm run lint` clean for all touched files (2 pre-existing context-file warnings unrelated).
+- [x] **BLOCKER FOUND + FIXED (2026-05-30): base-table grants were never issued.** The RLS-first schema (0001/0002) wrote policies but never granted table-level DML, so Postgres returned `permission denied for table ...` *before* RLS ran — `service_role` (all edge functions) couldn't touch orders/tickets, and `anon` couldn't read the events catalogue. Phase 7's audit was static-only so it was missed. Migration `0011_restore_table_grants.sql` grants DML to `service_role` + `anon`/`authenticated` (gated by existing FORCE RLS) and re-applies 0007's `organizations` column hardening. Applied to remote + verified live: `get-tickets` now 404s `order_not_found` (was 500 permission denied), anon `GET /rest/v1/events` → 200, and anon still cannot read `organizations.stripe_account_id` (column grants = id/name/created_at only).
+- [x] Confirmed `TICKET_TOKEN_SECRET` + service-role vars ARE set in the deployed functions (probe got past the `server_misconfigured` check), resolving the Phase 2 open USER ACTION.
 
 **Phase 4 — Staff login UI:**
 - [ ] **Implement `LoginPage`:**

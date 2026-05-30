@@ -1,24 +1,23 @@
 import { useState } from 'react'
-import { useAuth } from '@/context/AuthContext'
 import { useTiersByEvent } from '@/hooks/useEvents'
 import { useCreateCheckout, useReserveTickets } from '@/hooks/useCheckout'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import type { CheckoutSession, ReserveResult, TicketTier } from '@/types/domain'
+import type { ReserveResult, TicketTier } from '@/types/domain'
 
 function describeReserve(r: ReserveResult): string {
   switch (r.result) {
     case 'success':
-      return `Reserved ${r.quantity} × — order ${r.orderId} (€${(r.amountCents / 100).toFixed(2)}).`
+      return `Reserved ${r.quantity} × — €${(r.amountCents / 100).toFixed(2)}. Proceed to payment.`
     case 'sold_out':
       return `Sold out. Available: ${r.available}.`
     case 'tier_not_found':
       return 'Ticket tier not found.'
     case 'invalid_quantity':
       return 'Invalid quantity.'
-    case 'unauthorized':
-      return 'You must be signed in as the buyer.'
+    case 'invalid_email':
+      return 'Please enter a valid email address.'
   }
 }
 
@@ -27,37 +26,38 @@ interface Props {
 }
 
 export function CheckoutPanel({ eventId }: Props) {
-  const { user } = useAuth()
   const tiersQuery = useTiersByEvent(eventId)
   const reserve = useReserveTickets()
   const checkout = useCreateCheckout()
 
+  const [email, setEmail] = useState('')
   const [tierId, setTierId] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [orderId, setOrderId] = useState<string | null>(null)
-  const [session, setSession] = useState<CheckoutSession | null>(null)
 
   const tiers = tiersQuery.data ?? []
+  const busy = reserve.isPending || checkout.isPending
 
   function selectedTier(): TicketTier | undefined {
     return tiers.find((t) => t.id === tierId)
   }
 
   async function onReserve() {
-    if (!user || !tierId) return
-    setSession(null)
-    const res = await reserve.mutateAsync({ tierId, quantity, buyerId: user.id })
+    if (!tierId || !email.trim()) return
+    // A fresh reservation invalidates any previous order.
+    setOrderId(null)
+    const res = await reserve.mutateAsync({ tierId, quantity, email: email.trim() })
     if (res.result === 'success') {
       setOrderId(res.orderId)
-    } else {
-      setOrderId(null)
     }
   }
 
   async function onCheckout() {
     if (!orderId) return
-    const s = await checkout.mutateAsync({ orderId })
-    setSession(s)
+    const session = await checkout.mutateAsync({ orderId })
+    // Hand the buyer off to Stripe's hosted checkout. On success Stripe returns
+    // them to /tickets/<order_reference> (set as success_url server-side).
+    window.location.assign(session.url)
   }
 
   if (tiersQuery.isLoading) return <p>Loading tiers…</p>
@@ -67,7 +67,19 @@ export function CheckoutPanel({ eventId }: Props) {
     <section>
       <h2>Checkout</h2>
 
-      {!user && <p>Sign in to reserve tickets.</p>}
+      <div>
+        <label htmlFor="email">Email</label>
+        <Input
+          id="email"
+          type="email"
+          required
+          autoComplete="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          disabled={busy}
+        />
+      </div>
 
       <div>
         <label htmlFor="tier">Tier</label>
@@ -75,7 +87,7 @@ export function CheckoutPanel({ eventId }: Props) {
           id="tier"
           value={tierId}
           onChange={(e) => setTierId(e.target.value)}
-          disabled={!user || reserve.isPending}
+          disabled={busy}
         >
           <option value="">— select a tier —</option>
           {tiers.map((t) => {
@@ -97,14 +109,14 @@ export function CheckoutPanel({ eventId }: Props) {
           min={1}
           value={quantity}
           onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-          disabled={!user || reserve.isPending}
+          disabled={busy}
         />
       </div>
 
       <Button
         type="button"
         onClick={onReserve}
-        disabled={!user || !tierId || reserve.isPending}
+        disabled={busy || !tierId || !email.trim()}
       >
         {reserve.isPending ? 'Reserving…' : 'Reserve'}
       </Button>
@@ -122,19 +134,10 @@ export function CheckoutPanel({ eventId }: Props) {
       {orderId && (
         <div>
           <Button type="button" onClick={onCheckout} disabled={checkout.isPending}>
-            {checkout.isPending ? 'Creating checkout…' : 'Proceed to checkout (stub)'}
+            {checkout.isPending ? 'Redirecting…' : 'Proceed to checkout'}
           </Button>
           {checkout.isError && (
             <p role="alert">Checkout error: {checkout.error.message}</p>
-          )}
-          {session && (
-            <p>
-              Stub redirect URL:{' '}
-              <a href={session.url} target="_blank" rel="noreferrer">
-                {session.url}
-              </a>{' '}
-              (expires {new Date(session.expiresAt).toLocaleTimeString()})
-            </p>
           )}
         </div>
       )}

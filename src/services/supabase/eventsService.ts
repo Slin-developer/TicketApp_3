@@ -8,6 +8,7 @@ type TierInsert = Database['public']['Tables']['ticket_tiers']['Insert']
 type TierUpdate = Database['public']['Tables']['ticket_tiers']['Update']
 
 export interface IEventsRepository {
+  listPublic(): Promise<EventRow[]>
   listByOrg(orgId: string): Promise<EventRow[]>
   get(eventId: string): Promise<EventRow | null>
   create(input: EventInsert): Promise<EventRow>
@@ -21,6 +22,17 @@ export interface IEventsRepository {
 }
 
 export const eventsService: IEventsRepository = {
+  // Public catalogue for the guest-facing events page. Relies on the public
+  // read RLS policy on events (no org scoping, no auth).
+  async listPublic() {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('starts_at', { ascending: true })
+    if (error) throw error
+    return data ?? []
+  },
+
   async listByOrg(orgId) {
     const { data, error } = await supabase
       .from('events')

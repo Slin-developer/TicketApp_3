@@ -3,7 +3,7 @@ import type { CheckoutSession, ReserveResult } from '@/types/domain'
 export interface ReserveInput {
   tierId: string
   quantity: number
-  buyerId: string
+  email: string
 }
 
 export interface CreateCheckoutInput {
