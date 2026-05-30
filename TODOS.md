@@ -132,7 +132,7 @@
 **Phase 5 — Documentation:**
 - [ ] **Update `ARCHITECTURE.md` §5 (token model):**
   - Record that tokens are now derived (`HMAC(secret, ticket_id)`), not stored.
-  - Explain why: nothing secret persists; tokens are re-derivable for all phases of the ticket lifecycle.
+  - Explain why: nothing secret persists; token s are re-derivable for all phases of the ticket lifecycle.
   - Note the rotation caveat: rotating `TICKET_TOKEN_SECRET` invalidates already-issued QRs.
 - [ ] **Update `RULES.md`:**
   - Document the guest checkout model (orders with email + reference, no attendee_id).
