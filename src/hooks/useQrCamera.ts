@@ -123,13 +123,17 @@ export function useQrCamera({ onDetect }: UseQrCameraOptions): UseQrCamera {
     setError(null)
     setStatus('starting')
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // iOS Safari requires these specific constraints
+      const constraints = {
         video: {
           facingMode: 'environment',
           width: { ideal: 640 },
           height: { ideal: 640 },
         },
-      })
+        audio: false,
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = stream
 
       const video = videoRef.current
@@ -139,8 +143,13 @@ export function useQrCamera({ onDetect }: UseQrCameraOptions): UseQrCamera {
         streamRef.current = null
         return
       }
+      
       video.srcObject = stream
       video.setAttribute('playsinline', 'true')
+      // Ensure autoplay for iOS Safari
+      video.setAttribute('autoplay', 'true')
+      video.setAttribute('webkit-playsinline', 'true')
+      
       await video.play()
 
       pausedRef.current = false
@@ -158,11 +167,16 @@ export function useQrCamera({ onDetect }: UseQrCameraOptions): UseQrCamera {
       rafRef.current = requestAnimationFrame(loop)
     } catch (err) {
       console.error('Camera access failed:', err)
-      setError(
-        err instanceof DOMException && err.name === 'NotAllowedError'
+      const errorMessage = err instanceof DOMException 
+        ? err.name === 'NotAllowedError'
           ? 'Kamerazugriff verweigert. Bitte in den Browsereinstellungen erlauben.'
-          : 'Kamera konnte nicht gestartet werden.',
-      )
+          : err.name === 'NotFoundError'
+          ? 'Keine Kamera auf diesem Gerät gefunden.'
+          : err.name === 'NotReadableError'
+          ? 'Kamera wird von einer anderen App verwendet.'
+          : 'Kamera konnte nicht gestartet werden.'
+        : 'Kamera konnte nicht gestartet werden.'
+      setError(errorMessage)
       setStatus('error')
     }
   }, [decodeFrame])

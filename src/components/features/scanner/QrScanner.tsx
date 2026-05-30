@@ -121,7 +121,14 @@ export function QrScanner() {
         )}
 
         {/* Live camera feed (centre-cropped to the square viewport via CSS). */}
-        <video ref={videoRef} className="qr-video" muted playsInline style={{ display: showVideo ? 'block' : 'none' }} />
+        <video 
+          ref={videoRef} 
+          className="qr-video" 
+          muted 
+          playsInline 
+          autoPlay
+          style={{ display: showVideo ? 'block' : 'none' }} 
+        />
 
         {/* Scan HUD: corner sights + stationary laser line. */}
         {phase === 'scanning' && (
